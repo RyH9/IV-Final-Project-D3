@@ -22,7 +22,7 @@ class RouteDrawing{
 		// Start data loading sequence
 		this.loadVehicleData();
 		
-		// Test data and data transformation code
+		// Data and preprocessing code FOR TESTING PURPOSES
 		/*this.srcDstData = [
 			{"start-time": "5/1/2015 0:43", "end-time": "5/1/2015 1:03", "source": "entrance3", "destination": "general-gate1", "route-id": 0, "direction": 1, "car-id": "20154301124328-262", "car-type": "2P"},
 			{"start-time": "5/1/2015 0:43", "end-time": "5/1/2015 1:03", "source": "entrance3", "destination": "general-gate1", "route-id": 0, "direction": 1, "car-id": "20154301124328-262", "car-type": 1},
@@ -137,8 +137,8 @@ class RouteDrawing{
 			.style("visibility", "hidden")
 			.text("Tooltip");
 
-		// Clean prior data
-		this.cleanData();
+		// Remove simulation data
+		d3.select("body").select("svg").selectAll("rect").remove();
 		
 		// Need a local reference to the class
 		var thisObject = this;
@@ -150,14 +150,17 @@ class RouteDrawing{
 			return (d["start-time"] >= thisObject.startDate && d["start-time"] <= thisObject.endDate) && (thisObject.carFilters === "all" || d["car-type"].toString() === thisObject.carFilters);
 		});
 		
-		// Filter path data to only show the most recent path/vehicle-type combination (to avoid crashing the browser)
-		var combinations = [];
+		// Filter path data to only show the most recent path/vehicle-type combination (to avoid crashing the browser). Also track number of data.
+		var combinations = {};
 		var finalData = [];
 		for (let data of filteredData.reverse())
-		{
-			if (!((data["car-type"] + data["route-id"]) in combinations)){
-				combinations[combinations.length] = data["car-type"] + data["route-id"];
+		{	
+			if (!(data["car-type"].toString() + '-' + data["route-id"].toString() in combinations)) {
+				combinations[data["car-type"].toString() + '-' + data["route-id"].toString()] = 1;
 				finalData[finalData.length] = data;
+			}
+			else {
+				combinations[data["car-type"].toString() + '-' + data["route-id"].toString()] += 1;
 			}
 		}
 		
@@ -165,23 +168,9 @@ class RouteDrawing{
 		var pathData = paths.data(finalData);
 		var carColors = this.carColors;
 		
-		pathData
-			.exit()
-			.remove()
-		
+		// Draw new data
 		pathData
 			.enter()
-			/*.append("g") // To offset, if needed
-			.attr("transform", function(d){
-				var vehicleOffsets = {"1": 3, 
-					"2": 2, 
-					"3": 1, 
-					"4": 0, 
-					"5": -1, 
-					"6": -2, 
-					"2P": -3};
-				return "translate(" + vehicleOffsets[d["car-type"]] + " " + vehicleOffsets[d["car-type"]] + ")";
-			})*/
 			.append("path")
 			.attr("d", function(d){
 					return thisObject.lineGenerator(thisObject.srcDstPaths[d["route-id"]]["coordinates"]);
@@ -190,22 +179,58 @@ class RouteDrawing{
 				return carColors[d["car-type"].toString()];
 			})
 			.attr("fill", "none")
-			.attr("stroke-width", thisObject.scale.toString() + "px")
+			.attr("stroke-width", function(d){
+				var values = Object.values(combinations);
+				var widthScale = d3.scale.linear()
+					.domain([Math.min.apply(Math, values), Math.max.apply(Math, values)])
+					.range([thisObject.scale, thisObject.scale * 4]);
+				return widthScale(combinations[d["car-type"] + '-' + d["route-id"]]).toString() + "px";
+			})
 			.on("mouseover", function(d){
-				thisObject.tooltip.text("Car ID: " + d["car-id"] + " | Car Type: " + d["car-type"]); 
-				return thisObject.tooltip.style("visibility", "visible");
+				thisObject.tooltip.text("Car ID: " + d["car-id"] + "\nCar Type: " + d["car-type"] + "\nNumber of Vehicles: " + combinations[d["car-type"] + '-' + d["route-id"]]); 
+				thisObject.tooltip.style("visibility", "visible");
+				
+				// Highlight the current route by lowering opacity of others
+				var selectedRoute = this;
+				d3.selectAll("path").transition().style('opacity',function () {
+					return (this === selectedRoute) ? 1.0 : 0;
+				});
 			})
 			.on("mousemove", function(){
-				return thisObject.tooltip.style("top", (d3.event.pageY - 10)+"px").style("left",(d3.event.pageX + 10) + "px");
+				thisObject.tooltip.style("top", (d3.event.pageY - 10)+"px").style("left",(d3.event.pageX + 10) + "px");
 			})
 			.on("mouseout", function(){
-				return thisObject.tooltip.style("visibility", "hidden");
+				thisObject.tooltip.style("visibility", "hidden");
+				
+				// Reset opacity
+				d3.selectAll("path").transition().style('opacity', 1.0);
 			});
+		
+		// Update existing data
+		pathData
+			.attr("d", function(d){
+				return thisObject.lineGenerator(thisObject.srcDstPaths[d["route-id"]]["coordinates"]);
+			})
+			.attr("stroke", function(d){
+				return carColors[d["car-type"].toString()];
+			})
+			.attr("stroke-width", function(d){
+				var values = Object.values(combinations);
+				var widthScale = d3.scale.linear()
+					.domain([Math.min.apply(Math, values), Math.max.apply(Math, values)])
+					.range([thisObject.scale, thisObject.scale * 4]);
+			return widthScale(combinations[d["car-type"] + '-' + d["route-id"]]).toString() + "px";
+			})
+		
+		// Remove old data
+		pathData.exit().remove()
 	}
 
 	plotPositions(){
 		// While plotRoutes plots entire routes, plotPositions instead plots all vehicle positions at a single point in time
-		this.cleanData();
+		
+		// Remove all paths
+		d3.select("body").select("svg").selectAll("path").remove();
 		
 		var thisObject = this;
 		
@@ -213,67 +238,59 @@ class RouteDrawing{
 		var filteredData = this.srcDstData.filter(function(d){
 			return (d["start-time"] <= thisObject.startDate && d["end-time"] >= thisObject.startDate) && (thisObject.carFilters === "all" || d["car-type"].toString() === thisObject.carFilters);
 		});
+		
+		// Compute x and y coordinates given current time step
+		filteredData.forEach(function(element){
+			var progress = Math.round(((thisObject.startDate - element["start-time"]) / (element["end-time"] - element["start-time"])) * thisObject.srcDstPaths[element["route-id"]]["coordinates"].length);
+					
+			if (isNaN(progress))
+			{
+				progress = 0;
+			}
+			
+			// Account for direction
+			if (parseInt(element["direction"]) === 0){
+				progress = thisObject.srcDstPaths[element["route-id"]]["coordinates"].length - progress;
+			}
+			
+			progress = Math.min(Math.max(progress, 0), thisObject.srcDstPaths[element["route-id"]]["coordinates"].length - 1);
+			
+			element["x"] = parseInt(thisObject.srcDstPaths[element["route-id"]]["coordinates"][progress][0] - (thisObject.scale * 3 / 2));
+			element["y"] = parseInt(thisObject.srcDstPaths[element["route-id"]]["coordinates"][progress][1] - (thisObject.scale * 3 / 2));
+		})
 
 		var rects = d3.select("body").select("svg").selectAll("rect");
 
+		// Draw new data
 		rects.data(filteredData)
 			.enter()
 				.append("rect")
 				.attr("x", function(d){
-					// Compute vehicle's current estimated position in the park
-					var progress = Math.round(((thisObject.startDate - d["start-time"]) / (d["end-time"] - d["start-time"])) * thisObject.srcDstPaths[d["route-id"]]["coordinates"].length);
-					
-					if (isNaN(progress))
-					{
-						progress = 0;
-					}
-					
-					// Account for direction
-					if (parseInt(d["direction"]) === 0){
-						progress = thisObject.srcDstPaths[d["route-id"]]["coordinates"].length - progress;
-					}
-					
-					progress = Math.min(Math.max(progress, 0), thisObject.srcDstPaths[d["route-id"]]["coordinates"].length - 1);
-					
-					// Return vehicle's current x coordinate
-					return parseInt(thisObject.srcDstPaths[d["route-id"]]["coordinates"][progress][0] - (thisObject.scale * 3 / 2));
+					return d["x"];
 				})
 				.attr("y", function(d){
-					// Same process for y coordinate
-					var progress = Math.round(((thisObject.startDate - d["start-time"]) / (d["end-time"] - d["start-time"])) * thisObject.srcDstPaths[d["route-id"]]["coordinates"].length);
-					
-					if (isNaN(progress))
-					{
-						progress = 0;
-					}
-					
-					if (parseInt(d["direction"]) === 0){
-						progress = thisObject.srcDstPaths[d["route-id"]]["coordinates"].length - progress;
-					}
-					
-					progress = Math.min(Math.max(progress, 0), thisObject.srcDstPaths[d["route-id"]]["coordinates"].length - 1);
-					
-					return parseInt(thisObject.srcDstPaths[d["route-id"]]["coordinates"][progress][1] - (thisObject.scale * 3 / 2));
+					return d["y"];
 				})
 				.attr("width", this.scale * 3)
 				.attr("height", this.scale * 3)
 				.attr("fill", function(d){
 					return thisObject.carColors[d["car-type"].toString()];
 				});
-				/*.transition()
-					.delay(1000)
-					.duration(500)
-					.attr("width", 0)
-					.attr("height", 0)
-					.each('end', function(){
-						d3.select(this).remove();
-					});*/
-	}
 
-	cleanData(){
-		// Clean all existing paths and rects
-		d3.select("body").select("svg").selectAll("path").remove();
-		d3.select("body").select("svg").selectAll("rect").remove();
+		// Update existing data
+		rects.data(filteredData)
+			.attr("x", function(d){
+				return d["x"];
+			})
+			.attr("y", function(d){
+				return d["y"];
+			})
+			.attr("fill", function(d){
+				return thisObject.carColors[d["car-type"].toString()];
+			});
+
+		// Remove old data
+		rects.data(filteredData).exit().remove();
 	}
 	
 	enableSimulation()
@@ -301,7 +318,7 @@ class RouteDrawing{
 			thisObject.startDate += 10000;
 			
 			thisObject.plotPositions();
-		}, 25);
+		}, 20);
 	}
 	
 	disableSimulation()
