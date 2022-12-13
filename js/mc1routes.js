@@ -1,6 +1,6 @@
 /*
 Javascript class to render routes for the 2017 MC1 VAST challenge.
-Written by Ryan Hare for Dr. Sun's Information Visualization class.
+Written by Ryan Hare(main route part)and LuoBin Cui (bar part) for Dr. Sun's Information Visualization class.
 */
 
 class RouteDrawing{
@@ -18,9 +18,12 @@ class RouteDrawing{
 					"5": "#cccc00", 
 					"6": "#cc33ff", 
 					"2P": "#e60000"};
-		
 		// Start data loading sequence
 		this.loadVehicleData();
+		this.bardata={};
+		this.textdata=[];
+		this.barDatainit();
+		
 		
 		// Data and preprocessing code FOR TESTING PURPOSES
 		/*this.srcDstData = [
@@ -55,14 +58,52 @@ class RouteDrawing{
 		
 		this.plotRoutes();*/
 	}
+	barDatainit(){
+		var thisObject = this;
+		d3.csv("./data/LocCoords.csv", function(data) {
+			for (var i = 0; i < data.length; i++) {
+				thisObject.textdata.push([data[i].NAME,data[i].X,data[i].Y]);
+
+			}
+		});
+
+	
+	}
+	updatabardata(fdata){
+		
+		for (let data of fdata.reverse())
+		{	
+			switch(data["car-type"]){
+				case "1":thisObject.bardata[data["source"]][0]++;break;
+				case "2":thisObject.bardata[data["source"]][1]++;break;
+				case "3":thisObject.bardata[data["source"]][2]++;break;
+				case "4":thisObject.bardata[data["source"]][3]++;break;
+				case "5":thisObject.bardata[data["source"]][4]++;break;
+				case "6":thisObject.bardata[data["source"]][5]++;break;
+				case "2P":thisObject.bardata[data["source"]][6]++;break;
+			}
+			
+		}
+		/*
+		var thisObject=this;
+		switch(data["car-type"]){
+			case "1":thisObject.bardata[data["source"]][0]++;break;
+			case "2":thisObject.bardata[data["source"]][1]++;break;
+			case "3":thisObject.bardata[data["source"]][2]++;break;
+			case "4":thisObject.bardata[data["source"]][3]++;break;
+			case "5":thisObject.bardata[data["source"]][4]++;break;
+			case "6":thisObject.bardata[data["source"]][5]++;break;
+			case "2P":thisObject.bardata[data["source"]][6]++;break;
+		}*/
+	}
 	
 	loadVehicleData()
 	{
 		// Load vehicle data
 		var thisObject = this;
-		
 		this.srcDstData = d3.csv("./data/SrcDstDataRaw.csv")
 			.row(function(d) {
+
 				return {
 					// Clean time data
 					"start-time": Date.parse(d["start-time"]),
@@ -108,13 +149,16 @@ class RouteDrawing{
 				// Finish initialization
 				thisObject.plotRoutes();
 			});
+		this.plottext();
 	}
 	
 	updateCarFilters(carType)
 	{
 		this.carFilters = carType;
 		this.plotRoutes();
+		this.initbardata();
 		
+
 		var btnContainer = document.getElementById("vehicleTypeButtons");
 		var btns = btnContainer.getElementsByClassName("btn");
 		for (var i = 0; i < btns.length; i++) {
@@ -124,8 +168,118 @@ class RouteDrawing{
 			this.className += " active";
 		  });
 		}
+		
+
 	}
 	
+	plottext(){
+		var thisObject = this;
+		
+		var svgbar = d3.select("body").select("svg[id = 'bar']").style("visibility", "visible");
+		d3.select("body").select("svg").selectAll("text")
+		.data(this.textdata)
+		.enter()
+		.append("text")
+		.attr("x", function(d){return d[1]*4-10})
+		.attr("y", function(d){return d[2]*4})
+		.attr("font-size","12px")
+		.style("fill","#e6b422")
+		.text(function(d){return d[0]})
+		.on("mousemove", function(d){
+			
+			for (var i = 0; i < thisObject.textdata.length; i++) {
+				thisObject.bardata[thisObject.textdata[i][0]]=[0,0,0,0,0,0,0];
+			}
+			var filteredData = thisObject.srcDstData.filter(function(d){
+				return (d["start-time"] >= thisObject.startDate && d["start-time"] <= thisObject.endDate);
+			});
+			
+			for (let data of filteredData.reverse())
+			{	
+				switch(data["car-type"]){
+					case "1":thisObject.bardata[data["source"]][0]++;break;
+					case "2":thisObject.bardata[data["source"]][1]++;break;
+					case "3":thisObject.bardata[data["source"]][2]++;break;
+					case "4":thisObject.bardata[data["source"]][3]++;break;
+					case "5":thisObject.bardata[data["source"]][4]++;break;
+					case "6":thisObject.bardata[data["source"]][5]++;break;
+					case "2P":thisObject.bardata[data["source"]][6]++;break;
+				}
+			}
+			var dataset=thisObject.bardata[d[0]];
+			var bar=d3.select("body").select("svg[id = 'bar']")
+			var carColorss = {
+			"1": "#ff9933", 
+			"2": "#3399ff", 
+			"3": "#00e6e6", 
+			"4": "#00e600", 
+			"5": "#cccc00", 
+			"6": "#cc33ff", 
+			"7": "#e60000"};
+			var SizeScale = d3.scale.linear()
+			.domain([0, d3.max(dataset, function(d) { return d; })])
+			.range([0, 140]);
+
+			bar
+			.selectAll("rect")
+			.data(dataset)
+			.enter()
+			.append("rect")
+			.attr("x", function(d, i) {
+				return i * 40;  //
+			})
+			.attr("y", function(d) {
+				return 150-SizeScale(d);  
+			})
+			.attr("width", 35)
+			.attr("height", function(d) {
+				return SizeScale(d);
+			})
+			.attr("fill", function(d, i) {
+				return carColorss[i+1]; //
+			})
+			
+
+			bar
+			.selectAll("text")
+			.data(dataset)
+			.enter()
+			.append("text")
+			.attr("x", function(d, i) {
+				return i * 40 ;  
+			})
+			.attr("y", function(d) {
+					return 150;  
+			})
+			.text(function(d) {
+					return d;
+			})
+			.attr("font-family", "sans-serif")
+			.attr("font-size", "15px")
+			.attr("fill", "white")
+
+			bar	
+			.append("text")
+			.attr("x", 0)
+			.attr("y", 20)
+			.text(d[0])
+			.attr("font-family", "sans-serif")
+			.attr("font-size", "20px")
+			.attr("fill", "white")
+
+
+
+			svgbar.style("visibility", "visible");
+		})
+		.on("mouseout", function(){
+			d3.select("body").select("svg[id = 'bar']").selectAll("rect").remove();
+			d3.select("body").select("svg[id = 'bar']").selectAll("text").remove();
+			svgbar.style("visibility", "hidden");
+		});
+		
+	}
+
+
 	plotRoutes(){
 		// Initialize tooltip
 		if (this.tooltip != undefined){
@@ -155,6 +309,8 @@ class RouteDrawing{
 		var finalData = [];
 		for (let data of filteredData.reverse())
 		{	
+			
+
 			if (!(data["car-type"].toString() + '-' + data["route-id"].toString() in combinations)) {
 				combinations[data["car-type"].toString() + '-' + data["route-id"].toString()] = 1;
 				finalData[finalData.length] = data;
@@ -163,6 +319,9 @@ class RouteDrawing{
 				combinations[data["car-type"].toString() + '-' + data["route-id"].toString()] += 1;
 			}
 		}
+
+		
+		
 		
 		// Draw paths
 		var pathData = paths.data(finalData);
@@ -221,6 +380,17 @@ class RouteDrawing{
 					.range([thisObject.scale, thisObject.scale * 4]);
 			return widthScale(combinations[d["car-type"] + '-' + d["route-id"]]).toString() + "px";
 			})
+			.on("mouseover", function(d){
+				thisObject.tooltip.text("Car ID: " + d["car-id"] + "\nCar Type: " + d["car-type"] + "\nNumber of Vehicles: " + combinations[d["car-type"] + '-' + d["route-id"]]); 
+				thisObject.tooltip.style("visibility", "visible");
+				
+				// Highlight the current route by lowering opacity of others
+				var selectedRoute = this;
+				d3.selectAll("path").transition().style('opacity',function () {
+					return (this === selectedRoute) ? 1.0 : 0;
+				})
+				
+			});
 		
 		// Remove old data
 		pathData.exit().remove()
@@ -358,5 +528,6 @@ $(function() {
 		routeDrawing.startDate = Date.parse(start);
 		routeDrawing.endDate = Date.parse(end);
 		routeDrawing.plotRoutes();
+		routeDrawing.plottext();
 	});
 });
